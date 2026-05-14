@@ -1,0 +1,122 @@
+package v1
+
+import (
+	"backend-brevet/controllers"
+	"backend-brevet/dto"
+	"backend-brevet/middlewares"
+	"backend-brevet/repository"
+	"backend-brevet/services"
+
+	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
+)
+
+// RegisterBatchRoute registers all batch-related routes
+func RegisterBatchRoute(r fiber.Router, db *gorm.DB) {
+
+	batchRepository := repository.NewBatchRepository(db)
+	userRepository := repository.NewUserRepository(db)
+	quizRepository := repository.NewQuizRepository(db)
+	testimonialRepository := repository.NewTestimonialRepository(db)
+	courseRepository := repository.NewCourseRepository(db)
+	assignmentRepository := repository.NewAssignmentRepository(db)
+	purchaseRepository := repository.NewPurchaseRepository(db)
+	submissionRepository := repository.NewSubmissionRepository(db)
+	attendanceRepository := repository.NewAttendanceRepository(db)
+	meetingRepository := repository.NewMeetingRepository(db)
+
+	emailService, err := services.NewEmailServiceFromEnv()
+	if err != nil {
+		panic(err)
+	}
+	fileService := services.NewFileService()
+	courseService := services.NewCourseService(courseRepository, db, fileService)
+	batchService := services.NewBatchService(batchRepository, userRepository, quizRepository, courseRepository, assignmentRepository, submissionRepository, attendanceRepository, meetingRepository, db, fileService)
+	purchaseService := services.NewPurchaseService(purchaseRepository, userRepository, batchRepository, emailService, db)
+	testimonialService := services.NewTestimonialService(testimonialRepository, purchaseService, batchRepository)
+
+	meetingService := services.NewMeetingService(meetingRepository, batchRepository, purchaseRepository, userRepository, db)
+
+	batchController := controllers.NewBatchController(batchService, meetingService, courseService, db)
+	testimonialController := controllers.NewTestimonialController(testimonialService)
+
+	meetingController := controllers.NewMeetingController(meetingService, db)
+
+	attendanceService := services.NewAttendanceService(attendanceRepository, meetingRepository, purchaseRepository, db)
+	attendanceController := controllers.NewAttendanceController(attendanceService, db)
+
+	certificateRepository := repository.NewCertificateRepository(db)
+	certificateService := services.NewCertificateService(certificateRepository, userRepository, batchRepository, attendanceRepository, meetingRepository, purchaseService, batchService, fileService)
+	certificateController := controllers.NewCertificateController(certificateService)
+
+	scoreController := controllers.NewScoreController(services.NewScoreService(db, batchRepository, meetingRepository, purchaseService, quizRepository, submissionRepository), db)
+
+	r.Get("/", batchController.GetAllBatches)
+	r.Get("/:slug", batchController.GetBatchBySlug)
+	// POST /v1/courses/:courseId/batches
+	r.Put("/:id",
+		middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin"}),
+		middlewares.ValidateBody[dto.UpdateBatchRequest](),
+		batchController.UpdateBatch,
+	)
+	r.Delete("/:id",
+		middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin"}),
+		batchController.DeleteBatch,
+	)
+
+	r.Get("/:batchSlug/meetings", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin", "siswa", "guru"}),
+		meetingController.GetMeetingsByBatchSlug)
+	r.Post("/:batchID/meetings", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin"}),
+		middlewares.ValidateBody[dto.CreateMeetingRequest](),
+		meetingController.CreateMeeting)
+
+	// Get All Students
+	r.Get("/:batchSlug/students", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin", "guru"}),
+		batchController.GetAllStudents)
+
+	// routes.go
+	r.Get("/:batchSlug/students/:studentID/scores",
+		middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin", "guru"}),
+		scoreController.GetStudentScores)
+
+	r.Get("/:batchSlug/quota", batchController.GetBatchQuota)
+
+	// THIS IS ROUTE FOR ASSIGN TEACHER TO BATCH
+	// 	Method	Route	Deskripsi
+	// POST	/batches/:batchID/teachers	Tambah teacher ke batch tertentu
+	// GET	/batches/:batchID/teachers	List semua teacher dalam satu batch
+	// DELETE	/batches/:batchID/teachers/:userID	Hapus teacher tertentu dari
+
+	// ==================================
+	// 				Attendance
+	// ==================================
+	r.Put("/:batchID/attendances/bulk", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin"}),
+		middlewares.ValidateBody[dto.BulkAttendanceRequest](), attendanceController.BulkUpsertAttendance)
+	r.Get("/:batchSlug/attendances", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin"}), attendanceController.GetAllAttendancesByBatchSlug)
+
+	// ==================================
+	// 				Testimonial
+	// ==================================
+	r.Get("/:batchSlug/testimonials",
+		testimonialController.GetByBatchIDFiltered)
+	r.Post("/:batchID/testimonials", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"siswa"}),
+		middlewares.ValidateBody[dto.CreateTestimonialRequest](),
+		testimonialController.Create)
+
+	// ==================================
+	// 				Certificate
+	// ==================================
+	r.Get("/:batchID/certificates", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin", "guru"}),
+		certificateController.GetBatchCertificates)
+
+}

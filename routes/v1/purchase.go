@@ -1,0 +1,38 @@
+package v1
+
+import (
+	"backend-brevet/controllers"
+	"backend-brevet/dto"
+	"backend-brevet/middlewares"
+	"backend-brevet/repository"
+	"backend-brevet/services"
+
+	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
+)
+
+// RegisterPurchaseRoutes registers all purchase-related routes
+func RegisterPurchaseRoutes(r fiber.Router, db *gorm.DB) {
+
+	purchaseRepo := repository.NewPurchaseRepository(db)
+	userRepo := repository.NewUserRepository(db)
+	batchRepo := repository.NewBatchRepository(db)
+	emailService, err := services.NewEmailServiceFromEnv()
+	if err != nil {
+		panic(err)
+	}
+
+	purchaseService := services.NewPurchaseService(purchaseRepo, userRepo, batchRepo, emailService, db)
+	purchaseController := controllers.NewPurchaseController(purchaseService, db)
+
+	r.Get("/", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin"}), purchaseController.GetAllPurchases)
+
+	r.Get("/:id", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin"}), purchaseController.GetPurchaseByID)
+	r.Patch("/:id/status", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin"}),
+		middlewares.ValidateBody[dto.UpdateStatusPayment](),
+		purchaseController.UpdateStatusPayment)
+
+}

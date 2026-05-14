@@ -1,0 +1,68 @@
+package v1
+
+import (
+	"backend-brevet/controllers"
+	"backend-brevet/dto"
+	"backend-brevet/middlewares"
+	"backend-brevet/repository"
+	"backend-brevet/services"
+
+	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
+)
+
+// RegisterAssignmentRoutes register assignment routes
+func RegisterAssignmentRoutes(r fiber.Router, db *gorm.DB) {
+	// Inisialisasi service dan controller
+
+	fileService := services.NewFileService()
+
+	purchaseRepo := repository.NewPurchaseRepository(db)
+	userRepo := repository.NewUserRepository(db)
+
+	meetingRepo := repository.NewMeetingRepository(db)
+	assignmentRepository := repository.NewAssignmentRepository(db)
+	assignmentService := services.NewAssignmentService(assignmentRepository, meetingRepo, purchaseRepo, fileService, db)
+
+	assignmentController := controllers.NewAssignmentController(assignmentService, db)
+
+	r.Get("/", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin"}), assignmentController.GetAllAssignments)
+	r.Get("/:assignmentID", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin", "guru", "siswa"}), assignmentController.GetAssignmentByID)
+	r.Patch("/:assignmentID", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin", "guru"}), middlewares.ValidateBody[dto.UpdateAssignmentRequest](),
+		assignmentController.UpdateAssignment)
+	r.Delete("/:assignmentID", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"admin", "guru"}), assignmentController.DeleteAssignment)
+
+	// ==================================
+	// 				Submissions
+	// ==================================
+	submissionRepository := repository.NewSubmissionRepository(db)
+	attendanceRepository := repository.NewAttendanceRepository(db)
+	quizRepository := repository.NewQuizRepository(db)
+	meetingRepository := repository.NewMeetingRepository(db)
+	emailService, err := services.NewEmailServiceFromEnv()
+	if err != nil {
+		panic(err)
+	}
+	batchRepository := repository.NewBatchRepository(db)
+	purchaseService := services.NewPurchaseService(purchaseRepo, userRepo, batchRepository, emailService, db)
+	submissionService := services.NewSubmissionService(submissionRepository, assignmentRepository, meetingRepository, attendanceRepository, quizRepository, purchaseService, fileService, db)
+	submissionController := controllers.NewSubmissionController(submissionService, db)
+	r.Get("/:assignmentID/submissions", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"siswa", "guru", "admin"}), submissionController.GetAllSubmissionByAssignmentID)
+
+	r.Post("/:assignmentID/submissions", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"siswa"}), middlewares.ValidateBody[dto.CreateSubmissionRequest](),
+		submissionController.CreateSubmission)
+
+	r.Get("/:assignmentID/grades/excel", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"guru", "admin"}), submissionController.GenerateGradesExcel,
+	)
+	r.Put("/:assignmentID/grades/import", middlewares.RequireAuth(),
+		middlewares.RequireRole([]string{"guru", "admin"}), submissionController.ImportGradesFromExcel,
+	)
+
+}
