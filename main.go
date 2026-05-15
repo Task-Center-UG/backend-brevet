@@ -7,6 +7,7 @@ import (
 	"backend-brevet/scheduler"
 	"backend-brevet/utils"
 	"log"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -21,7 +22,13 @@ func main() {
 		log.Println("Warning: .env file not found, using system environment variables")
 	}
 
+	bodyLimitMB, err := strconv.Atoi(config.GetEnv("BODY_LIMIT_MB", "20"))
+	if err != nil || bodyLimitMB <= 0 {
+		bodyLimitMB = 20
+	}
+
 	app := fiber.New(fiber.Config{
+		BodyLimit: bodyLimitMB * 1024 * 1024,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
 			if e, ok := err.(*fiber.Error); ok {
