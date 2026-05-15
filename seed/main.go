@@ -20,10 +20,5 @@ func main() {
 		log.Fatalf("failed seeding prices: %v", err)
 	}
 
-	fmt.Println("Seeding courses...")
-	if err := master.SeedCourses(db); err != nil {
-		log.Fatalf("failed seeding courses: %v", err)
-	}
-
 	fmt.Println("Seeding done!")
 }
