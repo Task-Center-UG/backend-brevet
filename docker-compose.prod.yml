@@ -1,0 +1,74 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: backend-brevet-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: backend-brevet-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  migrate:
+    image: ${DOCKER_IMAGE:-zidanindratama/backend-brevet:latest}
+    container_name: backend-brevet-migrate
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      DB_HOST: db
+      REDIS_ADDR: redis:6379
+      UPLOAD_DIR: /root/public/uploads
+    command: ["sh", "-c", "./migrate && ./seed"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: ${DOCKER_IMAGE:-zidanindratama/backend-brevet:latest}
+    container_name: backend-brevet-api
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      DB_HOST: db
+      REDIS_ADDR: redis:6379
+      UPLOAD_DIR: /root/public/uploads
+    ports:
+      - "127.0.0.1:${APP_HOST_PORT:-8083}:${APP_PORT:-8083}"
+    volumes:
+      - uploads_data:/root/public/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:

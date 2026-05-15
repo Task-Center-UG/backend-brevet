@@ -1,0 +1,17 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+!.env.production.example
+bin/
+tmp/
+public/
+*.log
+*.tmp
+*.test
+*.out
+*.exe
+Dockerfile*
+docker-compose*.yml
+README.md
